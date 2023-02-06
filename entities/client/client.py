@@ -1,6 +1,6 @@
 import json
 import websockets
-from typing import Callable, Tuple
+
 
 class Client:
     """
@@ -28,16 +28,26 @@ class Client:
         Connects to the server and sends a `client_connect` event.
         """
         self.websocket = await websockets.connect(f"ws://{self.host}:{self.port}")
-        await self.websocket.send(json.dumps({
+        await self.send_message(json.dumps({
             "event": "client_connect",
             "data": ""
         }))
+
+    async def send_message(self, message) -> None:
+        message_sent = False
+        while not message_sent:
+            try:
+                await self.websocket.send(message)
+                message_sent = True
+            except websockets.ConnectionClosed:
+                print("Connection closed, trying to reconnect...")
+                await self.connect()
 
     async def disconnect(self) -> None:
         """
         Disconnects from the server and sends a `client_disconnect` event.
         """
-        await self.websocket.send(json.dumps({
+        await self.send_message(json.dumps({
             "event": "client_disconnect",
             "data": ""
         }))
@@ -52,14 +62,19 @@ class Client:
         :return: `True` if the sensor is connected, `False` otherwise.
         :rtype: bool
         """
-        await self.websocket.send(json.dumps({
-            "event": "sensor_connection_status",
-            "data": {
-                "sensor_id": sensor_id
-            }
-        }))
-        response = json.loads(await self.websocket.recv())
-        return response["data"]["connected"]
+        while True:
+            try:
+                await self.send_message(json.dumps({
+                    "event": "sensor_connection_status",
+                    "data": {
+                        "sensor_id": sensor_id
+                    }
+                }))
+                response = json.loads(await self.websocket.recv())
+                return response["data"]["connected"]
+            except websockets.ConnectionClosed:
+                print("Connection closed, trying to reconnect...")
+                await self.connect()
 
     async def subscribe(self, sensor_id: str) -> None:
         """
@@ -68,7 +83,7 @@ class Client:
         :param sensor_id: ID of the sensor to subscribe to.
         :type sensor_id: str
         """
-        await self.websocket.send(json.dumps({
+        await self.send_message(json.dumps({
             "event": "subscribe_sensor",
             "data": {
                 "sensor_id": sensor_id
@@ -82,7 +97,7 @@ class Client:
         :param sensor_id: ID of the sensor to unsubscribe from.
         :type sensor_id: str
         """
-        await self.websocket.send(json.dumps({
+        await self.send_message(json.dumps({
             "event": "unsubscribe_sensor",
             "data": {
                 "sensor_id": sensor_id
@@ -93,7 +108,7 @@ class Client:
         """
         Registers a callback for the given sensor, whenever the server sends readings for this sensor, the provided 
         callback will be executed.
-        
+
         Parameters:
         sensor_id (str): id of the sensor to subscribe to
         callback (callable): callable object to be executed whenever a new reading is received
@@ -108,10 +123,10 @@ class Client:
     async def removeCallback(self, sensor_id: str):
         """
         Removes the registered callback for a given sensor.
-        
+
         Parameters:
         sensor_id (str): id of the sensor for which the callback is to be removed
-        
+
         Returns:
         None
         """
@@ -121,15 +136,19 @@ class Client:
     async def listen(self):
         """
         Listens for incoming data from the server and invokes the registered callback for the respective sensor.
-        
+
         Returns:
         None
         """
         while True:
-            response = json.loads(await self.websocket.recv())
-            if response["event"] == "new_sensor_data":
-                sensor_id = response["data"]["sensor_id"]
-                if sensor_id in self.sensor_callbacks:
-                    callback, callback_args = self.sensor_callbacks[sensor_id]
-                    readings = response["data"]["sensor_readings"]
-                    callback(sensor_id, readings, *callback_args)
+            try:
+                response = json.loads(await self.websocket.recv())
+                if response["event"] == "new_sensor_data":
+                    sensor_id = response["data"]["sensor_id"]
+                    if sensor_id in self.sensor_callbacks:
+                        callback, callback_args = self.sensor_callbacks[sensor_id]
+                        readings = response["data"]["sensor_readings"]
+                        callback(sensor_id, readings, *callback_args)
+            except websockets.ConnectionClosed:
+                print("Connection closed, trying to reconnect...")
+                await self.connect()

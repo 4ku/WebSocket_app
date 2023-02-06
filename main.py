@@ -79,14 +79,14 @@ async def main():
     finally:
         # Disconnect agents from the server
         await agent1.close()
-        # await agent2.close()
+        await agent2.close()
 
         # Unsubscribe from the sensor
         await client1.unsubscribe("CE7238J")
 
         # Disconnect clients from the server
         await client1.disconnect()
-        # await client2.disconnect()
+        await client2.disconnect()
 
         # Stop the server
         server.stop()

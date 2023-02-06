@@ -17,3 +17,12 @@ Run application
 ```
 python main.py
 ```
+
+## Install client module as Python package
+```
+pip install entities/client
+```
+So then in any directory you can import Client class
+```
+from client import Client
+```
